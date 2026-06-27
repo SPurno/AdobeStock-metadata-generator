@@ -191,12 +191,16 @@ async function checkPageConnection() {
 
 async function checkEngineStatus() {
   try {
-    const response = await browser.runtime.sendMessage({ type: 'GET_SETTINGS' });
-    if (response && response.settings) {
-      // We'll get the actual TF status from the content script
+    const response = await browser.runtime.sendMessage({ type: 'GET_ENGINE_STATUS' });
+    if (response) {
+      engineStatus.tf = response.tfReady ? 'ready' : 'loading';
+      engineStatus.model = response.modelReady ? 'ready' : 'loading';
+      console.log('[ASMG Popup] Real engine status:', JSON.stringify(response));
     }
   } catch (error) {
-    // Engine status will be updated by the content script's response
+    engineStatus.tf = 'error';
+    engineStatus.model = 'error';
+    console.error('[ASMG Popup] Engine status check failed:', error.message);
   }
 }
 
@@ -210,11 +214,11 @@ function updateStatusDisplay() {
         pageEl.className = 'engine-check ready';
         break;
       case 'waiting':
-        pageEl.textContent = '⏳ Loading...';
+        pageEl.textContent = '⏳ Waiting for page...';
         pageEl.className = 'engine-check loading';
         break;
       case 'unavailable':
-        pageEl.textContent = '❌ Not available';
+        pageEl.textContent = '❌ Page not found';
         pageEl.className = 'engine-check error';
         break;
       case 'wrong_page':
@@ -224,33 +228,41 @@ function updateStatusDisplay() {
     }
   }
   
-  // TF.js status
+  // TF.js status (from background page, not from page)
   const tfStatusEl = document.getElementById('tf-status');
   if (tfStatusEl) {
-    if (engineStatus.page === 'ready') {
-      tfStatusEl.textContent = '✅ Active (CPU)';
-      tfStatusEl.className = 'engine-check ready';
-    } else if (engineStatus.page === 'waiting') {
-      tfStatusEl.textContent = '⏳ Loading...';
-      tfStatusEl.className = 'engine-check loading';
-    } else {
-      tfStatusEl.textContent = '⏳ Waiting for page...';
-      tfStatusEl.className = 'engine-check loading';
+    switch (engineStatus.tf) {
+      case 'ready':
+        tfStatusEl.textContent = '✅ TensorFlow.js';
+        tfStatusEl.className = 'engine-check ready';
+        break;
+      case 'loading':
+        tfStatusEl.textContent = '⏳ Loading TF...';
+        tfStatusEl.className = 'engine-check loading';
+        break;
+      default:
+        tfStatusEl.textContent = '❌ TF not loaded';
+        tfStatusEl.className = 'engine-check error';
+        break;
     }
   }
   
-  // Model status
+  // Model status (from background page)
   const modelStatusEl = document.getElementById('model-status');
   if (modelStatusEl) {
-    if (engineStatus.page === 'ready') {
-      modelStatusEl.textContent = '✅ MobileNet V1';
-      modelStatusEl.className = 'engine-check ready';
-    } else if (engineStatus.page === 'waiting') {
-      modelStatusEl.textContent = '⏳ Loading...';
-      modelStatusEl.className = 'engine-check loading';
-    } else {
-      modelStatusEl.textContent = '⏳ Waiting...';
-      modelStatusEl.className = 'engine-check loading';
+    switch (engineStatus.model) {
+      case 'ready':
+        modelStatusEl.textContent = '✅ MobileNet V1';
+        modelStatusEl.className = 'engine-check ready';
+        break;
+      case 'loading':
+        modelStatusEl.textContent = '⏳ Downloading model...';
+        modelStatusEl.className = 'engine-check loading';
+        break;
+      default:
+        modelStatusEl.textContent = '❌ Model failed';
+        modelStatusEl.className = 'engine-check error';
+        break;
     }
   }
   
@@ -259,18 +271,21 @@ function updateStatusDisplay() {
   const text = document.getElementById('status-text');
   
   if (dot && text) {
-    if (engineStatus.page === 'ready') {
+    if (engineStatus.tf === 'ready' && engineStatus.model === 'ready' && engineStatus.page === 'ready') {
       dot.className = 'dot ready';
-      text.textContent = 'ML Engine Ready';
-    } else if (engineStatus.page === 'waiting') {
-      dot.className = 'dot analyzing';
-      text.textContent = 'Loading ML...';
+      text.textContent = 'All Systems Ready';
     } else if (engineStatus.page === 'wrong_page') {
       dot.className = 'dot error';
       text.textContent = 'Open Adobe Stock';
+    } else if (engineStatus.model === 'loading' || engineStatus.tf === 'loading') {
+      dot.className = 'dot analyzing';
+      text.textContent = 'Loading ML Engine...';
+    } else if (engineStatus.model === 'error' || engineStatus.tf === 'error') {
+      dot.className = 'dot error';
+      text.textContent = 'Engine Error';
     } else {
       dot.className = 'dot error';
-      text.textContent = 'Error';
+      text.textContent = 'Waiting...';
     }
   }
 }

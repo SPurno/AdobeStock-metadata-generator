@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Adobe Stock Metadata Generator",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "AI-powered metadata generator for Adobe Stock contributors. Auto-generates titles, keywords, categories, and analyzes visuals using machine learning.",
   "homepage_url": "https://github.com/SPurno/AdobeStock-metadata-generator",
   "author": "Faruk Ahmed",
@@ -40,7 +40,14 @@
   ],
 
   "background": {
-    "scripts": ["background.js"]
+    "scripts": [
+      "lib/vendor/tf.min.js",
+      "lib/vendor/mobilenet.min.js",
+      "data/keywords.js",
+      "data/categories.js",
+      "data/titles.js",
+      "background.js"
+    ]
   },
 
   "content_scripts": [
@@ -65,10 +72,6 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "lib/analysis.html",
-        "lib/analysis.js",
-        "lib/vendor/tf.min.js",
-        "lib/vendor/mobilenet.min.js",
         "data/keywords.js",
         "data/categories.js",
         "data/titles.js"
@@ -78,6 +81,6 @@
   ],
 
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://tfhub.dev https://storage.googleapis.com https://www.kaggle.com https://kaggle.com"
   }
 }

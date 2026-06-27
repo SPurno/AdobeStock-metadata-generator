@@ -1,6 +1,6 @@
 {
   "name": "adobestock-metadata-generator",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "A Firefox add-on that uses AI-powered client-side image analysis to automatically generate metadata for Adobe Stock contributor uploads.",
   "main": "background.js",
   "directories": {

@@ -33,6 +33,9 @@ const CONFIG = {
     : 'lib/analysis.html'
 };
 
+// Enable debug logs for troubleshooting
+CONFIG.debug = true;
+
 // ============================================
 // STATE
 // ============================================
@@ -52,6 +55,35 @@ const state = {
 };
 
 // ============================================
+// BACKGROUND ENGINE STATUS (polling)
+// ============================================
+
+let bgEngineReady = false;
+let bgEngineCheckInterval = null;
+
+function startBgEnginePolling() {
+  // Check background engine status every 3 seconds
+  bgEngineCheckInterval = setInterval(async () => {
+    try {
+      const response = await browser.runtime.sendMessage({ type: 'GET_ENGINE_STATUS' });
+      if (response && response.available) {
+        bgEngineReady = true;
+        state.engineReady = true;
+        state.engineEverBeenReady = true;
+        state.engineError = null;
+        console.log('[ASMG] Background engine is ready');
+        if (bgEngineCheckInterval) {
+          clearInterval(bgEngineCheckInterval);
+          bgEngineCheckInterval = null;
+        }
+      }
+    } catch (e) {
+      // Engine not ready yet, will retry
+    }
+  }, 3000);
+}
+
+// ============================================
 // INITIALIZATION
 // ============================================
 
@@ -59,13 +91,16 @@ async function init() {
   if (state.initialized) return;
   state.initialized = true;
 
-  log('Content script initializing...');
+  console.log('[ASMG] Content script initializing...');
   state.settings = await getSettings();
-  createAnalysisFrame();
+  
+  // Start polling background engine status
+  startBgEnginePolling();
+  
   injectUI();
   observePageChanges();
   setupMessageListeners();
-  log('Content script initialized');
+  console.log('[ASMG] Content script initialized');
 }
 
 // ============================================
@@ -89,31 +124,30 @@ function createAnalysisFrame() {
 
 function waitForEngine(timeout = 120000) {
   return new Promise((resolve, reject) => {
-    // If already ready, resolve immediately
-    if (state.engineReady) return resolve(true);
-    
-    // If engine previously failed on init, don't wait - resolve immediately
-    // The iframe will retry model loading when it receives the analysis request
-    if (state.engineError && !state.engineEverBeenReady) {
-      console.log('[ASMG] Engine had error on init, skipping wait to allow retry:', state.engineError);
-      state.engineError = null;
+    if (state.engineReady || bgEngineReady) {
+      state.engineReady = true;
       return resolve(true);
     }
     
     const timeoutId = setTimeout(() => {
-      const errorMsg = state.engineError 
-        ? 'Analysis engine failed: ' + state.engineError 
-        : 'Analysis engine timed out - check network connection (needs ~4MB model download)';
-      reject(new Error(errorMsg));
+      reject(new Error('Analysis engine not ready yet - waiting for MobileNet model to download (~4MB). Check your internet connection.'));
     }, timeout);
     
     const checkReady = () => {
-      if (state.engineReady) {
-        clearTimeout(timeoutId);
-        resolve(true);
-      } else {
-        setTimeout(checkReady, 500);
-      }
+      // Check background engine status
+      browser.runtime.sendMessage({ type: 'GET_ENGINE_STATUS' }).then(response => {
+        if (response && response.available) {
+          bgEngineReady = true;
+          state.engineReady = true;
+          state.engineEverBeenReady = true;
+          clearTimeout(timeoutId);
+          resolve(true);
+        } else {
+          setTimeout(checkReady, 1000);
+        }
+      }).catch(() => {
+        setTimeout(checkReady, 1000);
+      });
     };
     
     checkReady();
@@ -274,6 +308,11 @@ async function analyzeAsset(assetInfo) {
   state.isAnalyzing = true;
   
   try {
+    showStatus('Initializing ML engine (downloading ~4MB model)...', 'analyzing');
+    
+    // Wait for background engine to be ready
+    await waitForEngine(180000); // 3 minute timeout for first model download
+    
     const isVideo = assetInfo.mediaType === 'video';
     
     if (isVideo) {
@@ -283,55 +322,63 @@ async function analyzeAsset(assetInfo) {
         showStatus('Could not capture video frame', 'error');
         return;
       }
-      // Wait for engine with generous timeout for model download
-      showStatus('Initializing ML engine (downloading model)...', 'analyzing');
-      await waitForEngine(120000);
-      const requestId = ++state.currentRequestId;
-      showStatus('Analyzing video frame...', 'analyzing');
-      const results = await sendForAnalysis(dataUrl, requestId, true);
-      showAnalysisResults(results);
-      applyMetadata(results, assetInfo.container);
-      return results;
+      
+      showStatus('Analyzing video frame with MobileNet...', 'analyzing');
+      const response = await browser.runtime.sendMessage({
+        type: 'ANALYZE_IMAGE',
+        imageDataUrl: dataUrl
+      });
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      showAnalysisResults(response.results);
+      await applyMetadata(response.results, assetInfo.container);
+      return response.results;
     }
     
-    // For images: send the URL directly to the iframe
-    // The iframe will fetch it using extension host_permissions
+    // For images
     const imageUrl = getImageUrl(assetInfo.element);
     if (!imageUrl) {
       showStatus('Image has no source URL', 'error');
       return;
     }
     
-    // Handle blob: URLs - fetch via XHR in content script (same-origin for blob URLs)
+    showStatus('Analyzing image with MobileNet...', 'analyzing');
+    
+    // Handle blob: URLs - convert to data URL first
     if (imageUrl.startsWith('blob:')) {
-      showStatus('Capturing image...', 'analyzing');
       try {
         const dataUrl = await captureBlobUrl(imageUrl);
         if (dataUrl) {
-          await waitForEngine(120000);
-          const requestId = ++state.currentRequestId;
-          showStatus('Analyzing image...', 'analyzing');
-          const results = await sendForAnalysis(dataUrl, requestId, false);
-          showAnalysisResults(results);
-          applyMetadata(results, assetInfo.container);
-          return results;
+          const response = await browser.runtime.sendMessage({
+            type: 'ANALYZE_IMAGE',
+            imageDataUrl: dataUrl
+          });
+          if (response.error) throw new Error(response.error);
+          showAnalysisResults(response.results);
+          await applyMetadata(response.results, assetInfo.container);
+          return response.results;
         }
-      } catch (e) {
-        // blob: URL capture failed, try fetching from iframe
-      }
+      } catch (e) { /* fallback to URL */ }
     }
     
-    showStatus('Initializing ML engine (downloading model)...', 'analyzing');
-    await waitForEngine(120000);
+    // Send image URL to background for analysis (it will fetch using host_permissions)
+    const response = await browser.runtime.sendMessage({
+      type: 'ANALYZE_IMAGE',
+      imageUrl: imageUrl
+    });
     
-    const requestId = ++state.currentRequestId;
-    const results = await sendForAnalysis(imageUrl, requestId, false);
+    if (response.error) {
+      throw new Error(response.error);
+    }
     
-    showAnalysisResults(results);
-    applyMetadata(results, assetInfo.container);
-    return results;
+    showAnalysisResults(response.results);
+    await applyMetadata(response.results, assetInfo.container);
+    return response.results;
   } catch (error) {
-    log('Analysis error:', error);
+    console.error('[ASMG] Analysis error:', error);
     showStatus('Analysis failed: ' + error.message, 'error');
   } finally {
     state.isAnalyzing = false;
@@ -339,40 +386,18 @@ async function analyzeAsset(assetInfo) {
 }
 
 function sendForAnalysis(imageUrlOrData, requestId, isVideo = false) {
-  return new Promise((resolve, reject) => {
-    if (!imageUrlOrData) {
-      reject(new Error('No image source provided'));
-      return;
-    }
-    
-    const timeout = setTimeout(() => {
-      reject(new Error('Analysis timed out after 60s'));
-    }, 60000);
-    
-    const handler = (event) => {
-      if (event.data.type === 'ANALYSIS_RESULT' && event.data.requestId === requestId) {
-        clearTimeout(timeout);
-        window.removeEventListener('message', handler);
-        resolve(event.data.results);
-      } else if (event.data.type === 'ANALYSIS_ERROR' && event.data.requestId === requestId) {
-        clearTimeout(timeout);
-        window.removeEventListener('message', handler);
-        reject(new Error(event.data.error));
-      }
-    };
-    
-    window.addEventListener('message', handler);
-    
-    const msg = { type: 'ANALYZE_IMAGE', requestId, isVideo };
-    const isDataUrl = typeof imageUrlOrData === 'string' && imageUrlOrData.startsWith('data:');
-    
-    if (isVideo || isDataUrl) {
-      msg.imageDataUrl = imageUrlOrData;
-    } else {
-      msg.imageUrl = imageUrlOrData;
-    }
-    
-    state.analysisFrame.contentWindow.postMessage(msg, '*');
+  // Sends to background script instead of iframe
+  const msg = { type: 'ANALYZE_IMAGE', requestId };
+  
+  if (typeof imageUrlOrData === 'string' && imageUrlOrData.startsWith('data:')) {
+    msg.imageDataUrl = imageUrlOrData;
+  } else {
+    msg.imageUrl = imageUrlOrData;
+  }
+  
+  return browser.runtime.sendMessage(msg).then(response => {
+    if (response.error) throw new Error(response.error);
+    return response.results;
   });
 }
 
@@ -1258,23 +1283,6 @@ function setupMessageListeners() {
       case 'PING_ENGINE':
         sendResponse({ ready: state.engineReady });
         break;
-    }
-  });
-  
-  // From analysis iframe
-  window.addEventListener('message', (event) => {
-    if (event.data.type === 'ANALYSIS_ENGINE_READY') {
-      state.engineReady = true;
-      state.engineEverBeenReady = true;
-      state.engineError = null;
-      console.log('[ASMG] Analysis engine ready');
-    } else if (event.data.type === 'PONG') {
-      state.engineReady = event.data.ready;
-      log('Engine: ' + (event.data.ready ? 'ready' : 'loading'));
-    } else if (event.data.type === 'ANALYSIS_ENGINE_ERROR') {
-      state.engineReady = false;
-      state.engineError = event.data.error;
-      console.error('[ASMG] Engine error:', event.data.error);
     }
   });
   
