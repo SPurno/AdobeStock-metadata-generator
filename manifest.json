@@ -1,0 +1,77 @@
+{
+  "manifest_version": 3,
+  "name": "Adobe Stock Metadata Generator",
+  "version": "1.3.0",
+  "description": "AI-powered metadata generator for Adobe Stock contributors. Auto-generates titles, keywords, categories, and analyzes visuals using machine learning.",
+  "homepage_url": "https://github.com/SPurno/AdobeStock-metadata-generator",
+  "author": "Faruk Ahmed",
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "adobe-stock-metadata-generator@example.com",
+      "strict_min_version": "120.0"
+    }
+  },
+
+  "data_collection_permissions": {
+    "collect": false,
+    "use": false,
+    "sell": false
+  },
+
+  "icons": {
+    "16": "icons/icon-16.svg",
+    "48": "icons/icon-48.svg",
+    "96": "icons/icon-96.svg"
+  },
+
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+
+  "host_permissions": [
+    "https://contributor.stock.adobe.com/*",
+    "https://*.adobe.com/*"
+  ],
+
+  "background": {
+    "scripts": ["background.js"]
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["https://contributor.stock.adobe.com/*"],
+      "js": ["content/content.js"],
+      "css": ["content/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Adobe Stock Metadata Generator",
+    "default_icon": {
+      "16": "icons/icon-16.svg",
+      "48": "icons/icon-48.svg",
+      "96": "icons/icon-96.svg"
+    }
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "lib/analysis.html",
+        "lib/analysis.js",
+        "data/keywords.js",
+        "data/categories.js",
+        "data/titles.js"
+      ],
+      "matches": ["https://contributor.stock.adobe.com/*"]
+    }
+  ],
+
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

@@ -1,0 +1,363 @@
+/* ====================================
+   Adobe Stock Metadata Generator 
+   Injected Content Styles
+   ==================================== */
+
+/* Extension Toolbar */
+.asmg-toolbar {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 999999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #333;
+}
+
+.asmg-toolbar-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+  background: #1473E6;
+  color: white;
+}
+
+.asmg-toolbar-button:hover {
+  background: #095ABA;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(20, 115, 230, 0.3);
+}
+
+.asmg-toolbar-button:active {
+  transform: translateY(0);
+}
+
+.asmg-toolbar-button.secondary {
+  background: white;
+  color: #333;
+  border: 1px solid #ddd;
+}
+
+.asmg-toolbar-button.secondary:hover {
+  background: #f5f5f5;
+  border-color: #ccc;
+}
+
+.asmg-toolbar-button .icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* Status Badge */
+.asmg-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.asmg-status-badge.ready {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.asmg-status-badge.analyzing {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.asmg-status-badge.error {
+  background: #fbe9e7;
+  color: #c62828;
+}
+
+/* Analysis Panel */
+.asmg-analysis-panel {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  z-index: 999998;
+  width: 340px;
+  max-height: 500px;
+  overflow-y: auto;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  padding: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  color: #333;
+  animation: asmg-slideIn 0.3s ease;
+}
+
+@keyframes asmg-slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.asmg-analysis-panel h3 {
+  margin: 0 0 12px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a1a1a;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+.asmg-analysis-section {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.asmg-analysis-section h4 {
+  margin: 0 0 6px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.asmg-analysis-section .value {
+  font-size: 13px;
+  color: #1a1a1a;
+  line-height: 1.5;
+}
+
+/* Prediction Bars */
+.asmg-prediction-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+
+.asmg-prediction-bar .label {
+  flex: 1;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.asmg-prediction-bar .bar-bg {
+  flex: 2;
+  height: 6px;
+  background: #e0e0e0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.asmg-prediction-bar .bar-fill {
+  height: 100%;
+  background: #1473E6;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.asmg-prediction-bar .prob {
+  font-size: 11px;
+  color: #888;
+  min-width: 35px;
+  text-align: right;
+}
+
+/* Color Swatches */
+.asmg-color-swatches {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.asmg-color-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid rgba(0,0,0,0.1);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.asmg-color-swatch:hover {
+  transform: scale(1.2);
+}
+
+/* Loading Spinner */
+.asmg-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-radius: 50%;
+  border-top-color: white;
+  animation: asmg-spin 0.6s linear infinite;
+}
+
+.asmg-spinner.dark {
+  border-color: rgba(0,0,0,0.1);
+  border-top-color: #1473E6;
+}
+
+@keyframes asmg-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Bulk Selection Checkboxes */
+.asmg-bulk-checkbox {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #1473E6;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.asmg-bulk-checkbox.visible {
+  opacity: 1;
+}
+
+/* Bulk Selection Toolbar */
+.asmg-bulk-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  margin: 8px 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+}
+
+.asmg-bulk-toolbar button {
+  padding: 4px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+
+.asmg-bulk-toolbar button:hover {
+  background: #f0f0f0;
+  border-color: #ccc;
+}
+
+.asmg-bulk-toolbar button.primary {
+  background: #1473E6;
+  color: white;
+  border-color: #1473E6;
+}
+
+.asmg-bulk-toolbar button.primary:hover {
+  background: #095ABA;
+}
+
+.asmg-bulk-toolbar .count {
+  color: #888;
+  font-size: 12px;
+  margin-left: auto;
+}
+
+/* Progress Bar */
+.asmg-progress {
+  margin: 8px 0;
+  width: 100%;
+  height: 4px;
+  background: #e0e0e0;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.asmg-progress .fill {
+  height: 100%;
+  background: #1473E6;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* Generated Metadata Preview */
+.asmg-metadata-preview {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  z-index: 99;
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 12px;
+}
+
+.asmg-button-apply {
+  padding: 6px 16px;
+  background: #1473E6;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  margin-top: 8px;
+}
+
+.asmg-button-apply:hover {
+  background: #095ABA;
+}
+
+.asmg-button-apply:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Keyword Tags */
+.asmg-keyword-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.asmg-keyword-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #e3f2fd;
+  color: #1565c0;
+  border-radius: 10px;
+  font-size: 11px;
+  cursor: default;
+}
