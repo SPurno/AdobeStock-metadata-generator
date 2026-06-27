@@ -42,6 +42,8 @@ const state = {
   analysisFrame: null,
   engineReady: false,
   engineInitializing: false,
+  engineError: null,
+  engineEverBeenReady: false,
   selectedItems: new Set(),
   resultsCache: new Map(),
   currentRequestId: 0,
@@ -85,12 +87,24 @@ function createAnalysisFrame() {
   log('Analysis iframe created');
 }
 
-function waitForEngine(timeout = 30000) {
+function waitForEngine(timeout = 120000) {
   return new Promise((resolve, reject) => {
+    // If already ready, resolve immediately
     if (state.engineReady) return resolve(true);
     
+    // If engine previously failed on init, don't wait - resolve immediately
+    // The iframe will retry model loading when it receives the analysis request
+    if (state.engineError && !state.engineEverBeenReady) {
+      console.log('[ASMG] Engine had error on init, skipping wait to allow retry:', state.engineError);
+      state.engineError = null;
+      return resolve(true);
+    }
+    
     const timeoutId = setTimeout(() => {
-      reject(new Error('Analysis engine failed to load - check network connection'));
+      const errorMsg = state.engineError 
+        ? 'Analysis engine failed: ' + state.engineError 
+        : 'Analysis engine timed out - check network connection (needs ~4MB model download)';
+      reject(new Error(errorMsg));
     }, timeout);
     
     const checkReady = () => {
@@ -269,8 +283,9 @@ async function analyzeAsset(assetInfo) {
         showStatus('Could not capture video frame', 'error');
         return;
       }
-      // Send captured frame to iframe for analysis
-      await waitForEngine(5000);
+      // Wait for engine with generous timeout for model download
+      showStatus('Initializing ML engine (downloading model)...', 'analyzing');
+      await waitForEngine(120000);
       const requestId = ++state.currentRequestId;
       showStatus('Analyzing video frame...', 'analyzing');
       const results = await sendForAnalysis(dataUrl, requestId, true);
@@ -293,7 +308,7 @@ async function analyzeAsset(assetInfo) {
       try {
         const dataUrl = await captureBlobUrl(imageUrl);
         if (dataUrl) {
-          await waitForEngine(5000);
+          await waitForEngine(120000);
           const requestId = ++state.currentRequestId;
           showStatus('Analyzing image...', 'analyzing');
           const results = await sendForAnalysis(dataUrl, requestId, false);
@@ -306,8 +321,8 @@ async function analyzeAsset(assetInfo) {
       }
     }
     
-    showStatus('Analyzing image...', 'analyzing');
-    await waitForEngine(5000);
+    showStatus('Initializing ML engine (downloading model)...', 'analyzing');
+    await waitForEngine(120000);
     
     const requestId = ++state.currentRequestId;
     const results = await sendForAnalysis(imageUrl, requestId, false);
@@ -365,40 +380,64 @@ function sendForAnalysis(imageUrlOrData, requestId, isVideo = false) {
 // METADATA APPLICATION
 // ============================================
 
+/**
+ * Apply metadata to the Adobe Stock contributor form fields.
+ * Uses multiple strategies to find the right fields, even when selectors fail.
+ */
 function applyMetadata(metadata, container) {
-  log('Applying metadata');
+  log('Applying metadata to form fields...');
   
   const context = container || document;
+  let titleApplied = false;
+  let keywordsApplied = false;
+  let categoryApplied = false;
   
-  // Title
+  // ======= TITLE =======
   if (metadata.title) {
-    const titleInput = findField(context, CONFIG.selectors.titleInput, 'input');
+    const titleInput = findInputField(context, 'title');
     if (titleInput) {
+      console.log('[ASMG] Found title field:', titleInput);
       setFieldValue(titleInput, metadata.title);
-      log('Title applied');
+      titleApplied = true;
+    } else {
+      console.warn('[ASMG] Could not find title field');
     }
   }
   
-  // Keywords
+  // ======= KEYWORDS =======
   if (metadata.keywords && metadata.keywords.length > 0) {
-    const keywordsInput = findField(context, CONFIG.selectors.keywordsInput, 'textarea') || 
-                          findField(context, CONFIG.selectors.keywordsInput, 'input');
-    if (keywordsInput) {
-      setFieldValue(keywordsInput, metadata.keywords.join(', '));
-      log('Keywords applied: ' + metadata.keywords.length);
+    const kwInput = findInputField(context, 'keyword');
+    if (kwInput) {
+      console.log('[ASMG] Found keywords field:', kwInput);
+      setFieldValue(kwInput, metadata.keywords.slice(0, 47).join(', '));
+      keywordsApplied = true;
+    } else {
+      console.warn('[ASMG] Could not find keywords field');
     }
   }
   
-  // Category
+  // ======= CATEGORY =======
   if (metadata.category) {
-    const categorySelect = findField(context, CONFIG.selectors.categorySelect, 'select');
-    if (categorySelect) {
-      selectCategory(categorySelect, metadata.category);
-      log('Category applied: ' + (metadata.categoryLabel || metadata.category));
+    const catSelect = findInputField(context, 'category');
+    if (catSelect) {
+      console.log('[ASMG] Found category field:', catSelect);
+      selectCategory(catSelect, metadata.category, metadata.categoryLabel);
+      categoryApplied = true;
+    } else {
+      console.warn('[ASMG] Could not find category field');
     }
   }
   
-  showStatus('Metadata applied! ✓', 'ready');
+  const summary = [];
+  if (titleApplied) summary.push('title');
+  if (keywordsApplied) summary.push('keywords');
+  if (categoryApplied) summary.push('category');
+  
+  if (summary.length > 0) {
+    showStatus('Applied: ' + summary.join(', ') + ' ✓', 'ready');
+  } else {
+    showStatus('Could not find any form fields to fill', 'error');
+  }
   
   setTimeout(() => {
     const panel = document.getElementById('asmg-analysis-panel');
@@ -406,33 +445,227 @@ function applyMetadata(metadata, container) {
   }, 2000);
 }
 
-function findField(container, selectors, tagName) {
-  const element = container.querySelector(selectors);
-  if (element) return element;
+/**
+ * Find an input field using multiple strategies, starting from most specific
+ * and falling back to broader searches.
+ * @param {Element} context - DOM context to search within
+ * @param {string} fieldType - 'title', 'keyword', or 'category'
+ * @returns {Element|null} The found field or null
+ */
+function findInputField(context, fieldType) {
+  const fieldStr = fieldType === 'keyword' ? 'keyword' : 
+                   fieldType === 'category' ? 'categor' : 'title';
   
-  const searchTags = tagName ? [tagName] : ['input', 'textarea', 'select'];
+  // Strategy 1: aria-label, placeholder, name, data-testid, id attributes
+  const attrSelectors = [
+    `[aria-label*="${fieldStr}" i]`,
+    `[placeholder*="${fieldStr}" i]`,
+    `[name*="${fieldStr}" i]`,
+    `[data-testid*="${fieldStr}" i]`,
+    `[id*="${fieldStr}" i]`,
+    `[class*="${fieldStr}" i]`
+  ];
   
-  for (const tag of searchTags) {
-    const elements = container.querySelectorAll(tag);
+  for (const sel of attrSelectors) {
+    // For category, look for select or div[role="listbox"], for title/keyword look for input/textarea
+    if (fieldType === 'category') {
+      const selectEls = context.querySelectorAll(`${sel}, ${sel} select`);
+      for (const el of selectEls) {
+        if (el.tagName === 'SELECT' || el.getAttribute('role') === 'listbox' || el.tagName === 'DIV') {
+          if (el.tagName === 'DIV' && el.getAttribute('role') !== 'listbox') continue;
+          if (isVisible(el)) return el;
+        }
+      }
+      // Also search inside elements that match for a select
+      const parents = context.querySelectorAll(sel);
+      for (const parent of parents) {
+        const select = parent.querySelector('select, div[role="listbox"]');
+        if (select && isVisible(select)) return select;
+      }
+    } else {
+      const inputs = context.querySelectorAll(`${sel}, ${sel} input, ${sel} textarea`);
+      for (const el of inputs) {
+        if ((el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && isVisible(el)) return el;
+      }
+      // Search inside
+      const parents = context.querySelectorAll(sel);
+      for (const parent of parents) {
+        const input = parent.querySelector('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea');
+        if (input && isVisible(input)) return input;
+      }
+    }
+  }
+  
+  // Strategy 2: Search all visible inputs/textarea/selects on the page
+  // and check their labels
+  if (fieldType === 'category') {
+    const selects = document.querySelectorAll('select, div[role="listbox"]');
+    for (const el of selects) {
+      if (!isVisible(el)) continue;
+      const label = findLabelForElement(el);
+      if (label && label.toLowerCase().includes('categor')) return el;
+    }
+  } else {
+    const tagName = fieldType === 'keyword' ? 'textarea' : 'input';
+    const elements = document.querySelectorAll(tagName);
     for (const el of elements) {
-      const style = window.getComputedStyle(el);
-      if (style.display === 'none' || style.visibility === 'hidden') continue;
+      if (!isVisible(el)) continue;
+      if (el.type === 'hidden' || el.type === 'checkbox' || el.type === 'radio') continue;
       
+      // Check the field's own attributes
       const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
       const placeholder = (el.getAttribute('placeholder') || '').toLowerCase();
       const name = (el.getAttribute('name') || '').toLowerCase();
+      const id = (el.getAttribute('id') || '').toLowerCase();
       
-      if (selectors.includes('title') && (ariaLabel.includes('title') || placeholder.includes('title') || name.includes('title'))) return el;
-      if (selectors.includes('keyword') && (ariaLabel.includes('keyword') || placeholder.includes('keyword') || name.includes('keyword'))) return el;
-      if (selectors.includes('categor') && (ariaLabel.includes('categor') || placeholder.includes('categor') || name.includes('categor'))) return el;
+      if (ariaLabel.includes(fieldStr) || placeholder.includes(fieldStr) || 
+          name.includes(fieldStr) || id.includes(fieldStr)) return el;
+      
+      // Check associated label
+      const label = findLabelForElement(el);
+      if (label && label.toLowerCase().includes(fieldStr)) return el;
+      
+      // Check nearby text that could be a label
+      const nearbyText = getNearbyLabelText(el);
+      if (nearbyText && nearbyText.toLowerCase().includes(fieldStr)) return el;
+    }
+    
+    // If no textarea found for keywords, try input type="text" as fallback
+    if (fieldType === 'keyword') {
+      const inputs = document.querySelectorAll('input[type="text"], input:not([type])');
+      for (const el of inputs) {
+        if (!isVisible(el)) continue;
+        const label = findLabelForElement(el);
+        if (label && label.toLowerCase().includes('keyword')) return el;
+        const nearbyText = getNearbyLabelText(el);
+        if (nearbyText && nearbyText.toLowerCase().includes('keyword')) return el;
+        const placeholder = (el.getAttribute('placeholder') || '').toLowerCase();
+        if (placeholder.includes('keyword') || placeholder.includes('tag') || placeholder.includes('separate')) return el;
+      }
+    }
+  }
+  
+  // Strategy 3: Look for fields near text labels
+  const labelText = fieldType === 'title' ? 'title' : 
+                    fieldType === 'keyword' ? 'keyword' : 'category';
+  
+  // Find visible text containing the label
+  const textNodes = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+  let node;
+  while (node = walker.nextNode()) {
+    if (node.textContent && node.textContent.toLowerCase().includes(labelText)) {
+      const parent = node.parentElement;
+      if (parent && isVisible(parent)) {
+        textNodes.push(parent);
+      }
+    }
+  }
+  
+  for (const labelEl of textNodes) {
+    // Look for the next input/textarea/select sibling or within
+    const parent = labelEl.parentElement;
+    if (parent) {
+      if (fieldType === 'category') {
+        const select = parent.querySelector('select, div[role="listbox"]');
+        if (select && isVisible(select)) return select;
+      } else {
+        const input = parent.querySelector('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea');
+        if (input && isVisible(input)) return input;
+        // Check next sibling
+        let next = labelEl.nextElementSibling;
+        while (next) {
+          if (next.tagName === 'INPUT' || next.tagName === 'TEXTAREA') {
+            if (isVisible(next)) return next;
+          }
+          next = next.nextElementSibling;
+        }
+      }
     }
   }
   
   return null;
 }
 
+/**
+ * Check if an element is visible in the DOM
+ */
+function isVisible(el) {
+  try {
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden' || 
+        (el.offsetWidth === 0 && el.offsetHeight === 0 && el.getClientRects().length === 0)) {
+      return false;
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Find the label element associated with a form field
+ */
+function findLabelForElement(el) {
+  // aria-labelledby
+  const labelledBy = el.getAttribute('aria-labelledby');
+  if (labelledBy) {
+    const labelEl = document.getElementById(labelledBy);
+    if (labelEl && labelEl.textContent) return labelEl.textContent.trim();
+  }
+  
+  // for attribute on label
+  const id = el.getAttribute('id');
+  if (id) {
+    const label = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+    if (label && label.textContent) return label.textContent.trim();
+  }
+  
+  // Parent label (input inside label)
+  const parentLabel = el.closest('label');
+  if (parentLabel && parentLabel.textContent) {
+    return parentLabel.textContent.replace(el.value || '', '').trim();
+  }
+  
+  // aria-label
+  const ariaLabel = el.getAttribute('aria-label');
+  if (ariaLabel) return ariaLabel.trim();
+  
+  return null;
+}
+
+/**
+ * Get text from nearby elements that could serve as a label
+ */
+function getNearbyLabelText(el) {
+  // Check previous sibling
+  let prev = el.previousElementSibling;
+  while (prev) {
+    if (prev.tagName === 'LABEL' || prev.tagName === 'SPAN' || prev.tagName === 'DIV') {
+      const text = prev.textContent.trim();
+      if (text.length > 0 && text.length < 100) return text;
+    }
+    if (prev.tagName === 'INPUT' || prev.tagName === 'TEXTAREA' || prev.tagName === 'SELECT') break;
+    prev = prev.previousElementSibling;
+  }
+  
+  // Check parent's previous sibling
+  const parent = el.parentElement;
+  if (parent) {
+    const parentPrev = parent.previousElementSibling;
+    if (parentPrev) {
+      const text = parentPrev.textContent.trim();
+      if (text.length > 0 && text.length < 100) return text;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Set a field's value while triggering all events that SPAs listen to
+ */
 function setFieldValue(element, value) {
-  // Use native setter to bypass React's synthetic event system
   const tagName = element.tagName;
   const proto = tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
   const nativeInputValueSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
@@ -443,20 +676,32 @@ function setFieldValue(element, value) {
     element.value = value;
   }
   
-  // Dispatch events that SPAs listen to
+  // Dispatch ALL events that React/Vue/SPA frameworks listen to
   element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
   element.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
   element.dispatchEvent(new Event('blur', { bubbles: true }));
+  element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+  element.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true }));
+  
+  // For React 16+, also trigger the native input event
+  const nativeInputEvent = new Event('input', { bubbles: true });
+  element.dispatchEvent(nativeInputEvent);
 }
 
-function selectCategory(selectElement, categoryId) {
+/**
+ * Select a category in the Adobe Stock category dropdown
+ */
+function selectCategory(selectElement, categoryId, categoryLabel) {
+  const label = categoryLabel || getCategoryLabelSimple(categoryId);
+  
   if (selectElement.tagName === 'SELECT') {
-    const categoryLabel = getCategoryLabelSimple(categoryId);
+    // Find the option that matches our category
     for (const option of selectElement.options) {
-      const text = option.textContent.toLowerCase();
-      const value = option.value.toLowerCase();
-      if (text.includes(categoryId) || value.includes(categoryId) || 
-          (categoryLabel && (text.includes(categoryLabel.toLowerCase()) || value.includes(categoryLabel.toLowerCase())))) {
+      const optText = option.textContent.toLowerCase();
+      const optValue = option.value.toLowerCase();
+      if (optText.includes(categoryId.toLowerCase()) || 
+          optValue.includes(categoryId.toLowerCase()) ||
+          (label && (optText.includes(label.toLowerCase()) || optValue.includes(label.toLowerCase())))) {
         selectElement.value = option.value;
         break;
       }
@@ -464,18 +709,19 @@ function selectCategory(selectElement, categoryId) {
     selectElement.dispatchEvent(new Event('change', { bubbles: true }));
     selectElement.dispatchEvent(new Event('input', { bubbles: true }));
   } else {
-    // Custom dropdown component
+    // Custom dropdown - click to open, then find and click the matching option
     selectElement.click();
     setTimeout(() => {
-      const options = document.querySelectorAll('[role="option"], [class*="option"], li');
-      const categoryLabel = getCategoryLabelSimple(categoryId);
+      const options = document.querySelectorAll('[role="option"], [class*="option"]:not([class*="dropdown"]), li:not([class*="menu"]), [data-testid*="option"]');
       for (const option of options) {
-        if (option.textContent.toLowerCase().includes((categoryLabel || categoryId).toLowerCase())) {
+        const text = option.textContent.toLowerCase().trim();
+        if (text.includes(label.toLowerCase()) || text.includes(categoryId.toLowerCase())) {
           option.click();
+          console.log('[ASMG] Category option clicked:', text);
           break;
         }
       }
-    }, 100);
+    }, 150);
   }
 }
 
@@ -577,9 +823,13 @@ function showAnalysisResults(metadata) {
   }
   content.append(kwSection);
   
-  // Apply button
+  // Apply button - use closure to capture metadata reference
   const applyBtn = createEl('button', { id: 'asmg-btn-apply-all', className: 'asmg-button-apply', textContent: '✅ Apply All Metadata' });
-  applyBtn.addEventListener('click', () => applyMetadata(metadata, null));
+  applyBtn.addEventListener('click', function() {
+    // Store in cache and retrieve to ensure we have the latest reference
+    state.resultsCache.set('latest', metadata);
+    applyMetadata(metadata, null);
+  });
   content.append(applyBtn);
   
   state.resultsCache.set('latest', metadata);
@@ -1015,13 +1265,16 @@ function setupMessageListeners() {
   window.addEventListener('message', (event) => {
     if (event.data.type === 'ANALYSIS_ENGINE_READY') {
       state.engineReady = true;
-      log('Analysis engine ready');
+      state.engineEverBeenReady = true;
+      state.engineError = null;
+      console.log('[ASMG] Analysis engine ready');
     } else if (event.data.type === 'PONG') {
       state.engineReady = event.data.ready;
       log('Engine: ' + (event.data.ready ? 'ready' : 'loading'));
     } else if (event.data.type === 'ANALYSIS_ENGINE_ERROR') {
       state.engineReady = false;
-      log('Engine error:', event.data.error);
+      state.engineError = event.data.error;
+      console.error('[ASMG] Engine error:', event.data.error);
     }
   });
   

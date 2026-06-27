@@ -15,6 +15,9 @@ let engineStatus = {
   page: 'loading'
 };
 
+// Polling interval for engine status
+let statusInterval = null;
+
 // ============================================
 // INITIALIZATION
 // ============================================
@@ -27,13 +30,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
   
   // Setup UI
-  setupUI();
-  
-  // Check page and engine status
+  setupUI();    // Check page and engine status
   checkStatus();
   
   // Periodic status check
-  setInterval(checkStatus, 5000);
+  statusInterval = setInterval(checkStatus, 5000);
 });
 
 /**
@@ -192,8 +193,7 @@ async function checkEngineStatus() {
   try {
     const response = await browser.runtime.sendMessage({ type: 'GET_SETTINGS' });
     if (response && response.settings) {
-      engineStatus.tf = 'ready';
-      engineStatus.model = 'ready';
+      // We'll get the actual TF status from the content script
     }
   } catch (error) {
     // Engine status will be updated by the content script's response
@@ -224,6 +224,36 @@ function updateStatusDisplay() {
     }
   }
   
+  // TF.js status
+  const tfStatusEl = document.getElementById('tf-status');
+  if (tfStatusEl) {
+    if (engineStatus.page === 'ready') {
+      tfStatusEl.textContent = '✅ Active (CPU)';
+      tfStatusEl.className = 'engine-check ready';
+    } else if (engineStatus.page === 'waiting') {
+      tfStatusEl.textContent = '⏳ Loading...';
+      tfStatusEl.className = 'engine-check loading';
+    } else {
+      tfStatusEl.textContent = '⏳ Waiting for page...';
+      tfStatusEl.className = 'engine-check loading';
+    }
+  }
+  
+  // Model status
+  const modelStatusEl = document.getElementById('model-status');
+  if (modelStatusEl) {
+    if (engineStatus.page === 'ready') {
+      modelStatusEl.textContent = '✅ MobileNet V1';
+      modelStatusEl.className = 'engine-check ready';
+    } else if (engineStatus.page === 'waiting') {
+      modelStatusEl.textContent = '⏳ Loading...';
+      modelStatusEl.className = 'engine-check loading';
+    } else {
+      modelStatusEl.textContent = '⏳ Waiting...';
+      modelStatusEl.className = 'engine-check loading';
+    }
+  }
+  
   // Overall status indicator
   const dot = document.getElementById('status-dot');
   const text = document.getElementById('status-text');
@@ -231,13 +261,13 @@ function updateStatusDisplay() {
   if (dot && text) {
     if (engineStatus.page === 'ready') {
       dot.className = 'dot ready';
-      text.textContent = 'Ready';
+      text.textContent = 'ML Engine Ready';
     } else if (engineStatus.page === 'waiting') {
       dot.className = 'dot analyzing';
-      text.textContent = 'Loading';
+      text.textContent = 'Loading ML...';
     } else if (engineStatus.page === 'wrong_page') {
       dot.className = 'dot error';
-      text.textContent = 'Wrong Page';
+      text.textContent = 'Open Adobe Stock';
     } else {
       dot.className = 'dot error';
       text.textContent = 'Error';

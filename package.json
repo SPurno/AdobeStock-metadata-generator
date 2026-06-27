@@ -1,0 +1,30 @@
+{
+  "name": "adobestock-metadata-generator",
+  "version": "1.4.1",
+  "description": "A Firefox add-on that uses AI-powered client-side image analysis to automatically generate metadata for Adobe Stock contributor uploads.",
+  "main": "background.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "build": "web-ext build --overwrite-dest",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "sign": "web-ext sign --api-key=$AMO_JWT_ISSUER --api-secret=$AMO_JWT_SECRET"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SPurno/AdobeStock-metadata-generator.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/SPurno/AdobeStock-metadata-generator/issues"
+  },
+  "homepage": "https://github.com/SPurno/AdobeStock-metadata-generator#readme",
+  "dependencies": {
+    "@tensorflow-models/mobilenet": "^2.1.1",
+    "@tensorflow/tfjs": "^4.22.0"
+  }
+}

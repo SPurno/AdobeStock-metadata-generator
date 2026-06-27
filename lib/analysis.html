@@ -4,15 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Adobe Stock Metadata Analysis Engine</title>
-  <!-- No external dependencies - pure JS canvas-based analysis -->
+  <!-- TensorFlow.js + MobileNet (actual ML model for image classification) -->
+  <script src="../lib/vendor/tf.min.js"></script>
+  <script src="../lib/vendor/mobilenet.min.js"></script>
   <!-- Data processing scripts -->
   <script src="../data/keywords.js"></script>
   <script src="../data/categories.js"></script>
   <script src="../data/titles.js"></script>
-  <!-- Analysis script -->
+  <!-- Analysis script (uses TF.js + MobileNet for real inference) -->
   <script src="analysis.js"></script>
 </head>
 <body>
-  <div id="status" style="display:none;"></div>
+  <div id="loading" style="display:none;"></div>
 </body>
 </html>
